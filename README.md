@@ -50,6 +50,47 @@
 
 https://github.com/user-attachments/assets/10cec749-bb56-4ab3-97af-4e38850108d2
 
+### Local Build & Isolated Client Execution (From Source)
+
+To build and run the NetBird agent locally from source code without pulling pre-built images (`image: netbirdio/netbird:latest`), use the multi-stage rootless Dockerfile:
+
+**1. Configure Environment**
+```zsh
+cp .env.example .env
+# Set your management URL and setup key:
+# NB_MANAGEMENT_URL=https://api.netbird.io:443
+# NB_SETUP_KEY=<YOUR_SETUP_KEY>
+```
+
+**2. Build & Launch via Docker Compose**
+```zsh
+# Build from local source and start rootless netstack container
+docker compose build --no-cache
+docker compose up -d
+```
+
+**3. Direct Docker CLI Execution**
+```zsh
+docker build -t netbird-client-local:latest -f client/Dockerfile.multistage-rootless .
+docker run --rm -it \
+  --name netbird-isolated \
+  --user 10001:10001 \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges:true \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  --tmpfs /var/lib/netbird:rw,noexec,nosuid,size=128m \
+  -e NB_MANAGEMENT_URL="https://api.netbird.io:443" \
+  -e NB_SETUP_KEY="<YOUR_SETUP_KEY>" \
+  netbird-client-local:latest
+```
+
+**4. Verify Daemon Health & Status**
+```zsh
+docker compose ps
+docker compose exec netbird-client /usr/local/bin/netbird status -d
+```
+
 ### Self-host NetBird (video)
 
 [![Watch the video](https://img.youtube.com/vi/bZAgpT6nzaQ/0.jpg)](https://youtu.be/bZAgpT6nzaQ)
