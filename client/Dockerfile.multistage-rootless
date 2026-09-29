@@ -1,0 +1,55 @@
+# Stage 1: Build client binary deterministically from source
+FROM golang:1.25.5-alpine3.21 AS builder
+
+RUN apk add --no-cache git
+
+WORKDIR /src
+
+# Leverage layer caching for Go modules
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+# Copy source tree
+COPY . .
+
+# Compile static client binary (CGO disabled for pure static artifact)
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X github.com/netbirdio/netbird/version.version=source-local -X main.commit=local -X main.builtBy=docker" \
+    -o /bin/netbird ./client
+
+# Stage 2: Minimal rootless runtime
+FROM alpine:3.21 AS runtime
+
+RUN apk add --no-cache bash ca-certificates tzdata && \
+    addgroup -g 10001 -S netbird && \
+    adduser -u 10001 -S -G netbird -h /var/lib/netbird -D -s /sbin/nologin netbird
+
+WORKDIR /var/lib/netbird
+
+# Copy compiled binary and entrypoint
+COPY --from=builder /bin/netbird /usr/local/bin/netbird
+COPY client/netbird-entrypoint.sh /usr/local/bin/netbird-entrypoint.sh
+RUN chmod +x /usr/local/bin/netbird-entrypoint.sh && \
+    chown -R 10001:10001 /var/lib/netbird
+
+USER 10001:10001
+
+# Strict netstack & non-root filesystem environment
+ENV NETBIRD_BIN="/usr/local/bin/netbird" \
+    NB_USE_NETSTACK_MODE="true" \
+    NB_ENABLE_NETSTACK_LOCAL_FORWARDING="true" \
+    NB_CONFIG="/var/lib/netbird/config.json" \
+    NB_STATE_DIR="/var/lib/netbird" \
+    NB_DAEMON_ADDR="unix:///var/lib/netbird/netbird.sock" \
+    NB_LOG_FILE="console,/var/lib/netbird/client.log" \
+    NB_DISABLE_DNS="true" \
+    NB_METRICS_PUSH_ENABLED="false" \
+    NB_ENABLE_CAPTURE="false" \
+    NB_ENTRYPOINT_SERVICE_TIMEOUT="30"
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/usr/local/bin/netbird", "status", "-C", "live"]
+
+ENTRYPOINT ["/usr/local/bin/netbird-entrypoint.sh"]

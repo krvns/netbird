@@ -1,3 +1,13 @@
+.git
+.github
+.devcontainer
+.githooks
+**/node_modules
+**/dist
+bin/
+*.pcap
+*.log
+*.tmp
 .env
 .env.*
 *.pem
