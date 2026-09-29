@@ -27,7 +27,10 @@ services:
       start_period: 10s
     networks:
       - netbird-local-net
+      - proxy_net
 
 networks:
   netbird-local-net:
     driver: bridge
+  proxy_net:
+    external: true
